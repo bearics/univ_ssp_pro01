@@ -1,5 +1,5 @@
 make: 
-	gcc -o a.out -g -ggdb *.c -lpthread
+	gcc -o s -g -ggdb *.c 
 
 clean:
 	rm -f *.o

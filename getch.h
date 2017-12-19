@@ -1,6 +1,11 @@
 #ifndef _GETCH_H_
 #define _GETCH_H_
 
-void getch(void);
+typedef enum{
+	INPUT, PIPE, AMP, LT, GT, TAB, END
+}STATE;
 
-#endif
+int getch(void);
+STATE tab(char* input);
+
+#endif // _GETCH_H_

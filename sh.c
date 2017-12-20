@@ -10,10 +10,11 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
+int copyFile(int sour, int dest);
 int token(int pos, char* left, char* right);
 void getInput();
 void parse(int arg[][2]);
-void execute(char* cmd,int in, int out);
+void execute(char* cmd,int in, int out, int sleep);
 
 int main(int argc, char* argv[])
 {
@@ -36,6 +37,8 @@ int main(int argc, char* argv[])
 		bzero(arg, sizeof(arg));
 		parse(arg);
 		int cnt = 0;	// 명령어 개수
+		int infp = open("intmp", O_RDWR | O_CREAT | O_TRUNC, 0644);
+		int outfp = open("outtmp", O_RDWR | O_CREAT | O_TRUNC, 0644);
 		while(arg[cnt][0] > 0 )
 		{
 			token(arg[cnt][0], left, right);
@@ -45,23 +48,38 @@ int main(int argc, char* argv[])
 			switch((STATE)arg[cnt][1])
 			{
 				case PIPE:
+					printf("PIPE~~~\n");
+					copyFile(outfp, infp);
+					execute(left, infp, outfp, 0);
 					break;
 				case LT:	// ls -al < file1
+					printf("LT~~~\n");
 					file = open(left, O_RDWR | O_CREAT | O_TRUNC, 0644);
-					execute(right, file, STDOUT_FILENO);
+					execute(right, outfp, file, 0);
+					close(file);
 					break;
 				case GT:
+					printf("GT~~~\n");
 					file = open(right, O_RDWR | O_CREAT | O_TRUNC, 0644);
-					execute(left, file, STDOUT_FILENO);
+					execute(left, outfp, file, 0);
+					close(file);
 					break;
 				case AMP:
+					printf("AMP~~~\n");
+					execute(left, outfp, file, 1);
+					cnt++;
 					break;
 				case END:
-					execute(left, STDOUT_FILENO,STDOUT_FILENO);
+					printf("END~~~\n");
+					execute(left, outfp, 1, 0);
 					break;
 			}
 			cnt++;
+			sleep(0.5);
+			close(infp);
+			close(outfp);
 		}
+
 	}
 	return 0;
 }
@@ -95,7 +113,7 @@ void parse(int arg[][2])
 				continue;
 		}
 	}
-	arg[cnt][0]=(i-1);
+	arg[cnt][0]=(i);
 	arg[cnt++][1] = (int)END;
 }
 
@@ -115,7 +133,7 @@ void getInput()
 	printf("\ninput : %s\n", p);
 }
 
-void execute(char* cmd,int in, int out)
+void execute(char* cmd,int in, int out, int sleep)
 {	// ls -al 과 같이 명령어를 받으면 띄어쓰기 단위로 잘라서 자식 프로세스로 실행한다.
 	int fd[2];	// 자식 프로세스와 통신하기 위한 파이프
 	char* cmdTok[10];
@@ -131,17 +149,24 @@ void execute(char* cmd,int in, int out)
 
 	int pid;
 
+			if(dup2(in, STDIN_FILENO) == -1)
+				perror("Failed to redirect stdin");
+			if(dup2(out, STDOUT_FILENO) == -1)	// 
+				perror("Failed to redirect stdout");
+
 	switch(pid = fork())
 	{
 		case 0:
-			if(dup2(in, out) == -1)	// 
-				perror("Failed to redirect stdout");
+
 			execvp(cmdTok[0], cmdTok);
-			exit(1);
+			if( sleep == 0)
+				exit(1);
 			break;
 		default:
-			wait(NULL);
-			dup2(0,1);
+			if(sleep == 0)
+				wait(NULL);
+			dup2(2,1);	// 표준 입출력 원상 복구 
+			dup2(2,0);	// 표준 입출력 원상 복구 
 			break;
 	}
 }
@@ -150,36 +175,35 @@ int token(int pos, char* left, char* right)
 {
 	bzero(left, 100);
 	bzero(right, 100);
-	if(pos == strlen(input))
-	{
-		int i;
-		right = NULL;	// 오른쪽은 없음
-		for(i=0; i< strlen(input);i++)
-			left[i] = input[i];
-		left[i] = 0x00;
+	int i=0, j=0, temp;
+
+	pos--;
+	while(!(input[pos-i] == '>' || input[pos-i] == '<' || input[pos-i] == '|' || input[pos-i] == '&' ) && ((pos-i) >=0))
+	{i++;}
+	temp = --i;
+	for(j=0;j<temp;j++){
+		left[j] = input[pos-(i--)];
 	}
+	if( pos == strlen(input) )
+		right = NULL;	// 명령어 의 오른쪽이 없는 상태 예외 처리
 	else
 	{
-		int i=0, j=0, temp;
-
-		pos--;
-		while(!(input[pos-i] == '>' || input[pos-i] == '<' || input[pos-i] == '|' || input[pos-i] == '&' ) && ((pos-i) >=0))
-		{i++;}
-		temp = --i;
-		for(j=0;j<temp;j++){
-			left[j] = input[pos-(i--)];
-		}
 		i=1; j=0;
 		pos += 2;
 		while(!(input[pos+i] == '>' || input[pos+i] == '<' || input[pos+i] == '|' || input[pos+i] == '&' ) && ((pos+i)<= strlen(input)))
 		{
 			right[j++] = input[pos+i++];
-		}
+		}	
 	}
-
-
-
 }
 
+int copyFile(int sour, int dest)
+{
+	char buff[1024];
 
+	while(read(sour, buff, 1024) > 0)
+	{
+		write(dest, buff, strlen(buff));
+	}
+}
 
